@@ -67,8 +67,19 @@ public class PythonLaunchHelper
             RedirectStandardError = true,
             WorkingDirectory = Environment.CurrentDirectory
         };
+        // Colab must use notebook Python even when Drive contains an old venv.
+        if (Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+        {
+            string colabPython = Environment.GetEnvironmentVariable("SWARM_COLAB_PYTHON");
+            if (string.IsNullOrWhiteSpace(colabPython) || !File.Exists(colabPython))
+            {
+                throw new InvalidOperationException("Colab notebook Python was not found. Run the Colab preparation cell before starting SwarmUI.");
+            }
+            start.FileName = colabPython;
+            CleanEnvironmentOfPythonMess(start, "(Generic python launch) ");
+        }
         // Favor Comfy dlbackend python, as that's known to have torch/etc. packages already.
-        if (File.Exists("./dlbackend/comfy/python_embeded/python.exe"))
+        else if (File.Exists("./dlbackend/comfy/python_embeded/python.exe"))
         {
             start.FileName = "./dlbackend/comfy/python_embeded/python.exe";
             start.WorkingDirectory = Path.GetFullPath("./dlbackend/comfy/");

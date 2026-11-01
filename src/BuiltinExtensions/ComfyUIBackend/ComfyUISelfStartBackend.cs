@@ -164,12 +164,20 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
                     Process p = backends.FirstOrDefault().DoPythonCall($"-s -m pip install{cacheOption} -r {path}");
                     NetworkBackendUtils.ReportLogsFromProcess(p, $"ComfyUI (Requirements Install - {folderName})", "");
                     await p.WaitForExitAsync(Program.GlobalProgramCancel);
+                    if (p.ExitCode != 0 && Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+                    {
+                        throw new SwarmReadableErrorException($"Colab requirements installation failed for '{folderName}' (exit code {p.ExitCode}). Check the pip log for conflicts with the protected Colab package versions.");
+                    }
                     AddLoadStatus($"Requirement install {reqFile} done.");
                 }
                 catch (Exception ex)
                 {
                     Logs.Error($"Failed to install comfy backend node requirements: {ex.ReadableString()}");
                     AddLoadStatus($"Error during requirements installation.");
+                    if (Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+                    {
+                        throw;
+                    }
                 }
                 if (doRestart)
                 {
@@ -331,6 +339,19 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
     /// <summary>Runs a generic python call for the current comfy backend.</summary>
     public Process DoPythonCall(string call)
     {
+        if (Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true" && call.Contains("-m pip"))
+        {
+            string constraints = Environment.GetEnvironmentVariable("PIP_CONSTRAINT");
+            if (string.IsNullOrWhiteSpace(constraints) || !File.Exists(constraints) || new FileInfo(constraints).Length == 0)
+            {
+                throw new SwarmReadableErrorException("Colab package protection is missing. Run the Colab preparation cell before installing backend packages.");
+            }
+            // pip constraints apply to installs, but cannot protect against explicit uninstalls.
+            if (call.Contains("-m pip uninstall"))
+            {
+                throw new SwarmReadableErrorException($"Automatic package removal is disabled in Colab to preserve its preinstalled environment. Requested command: {call}");
+            }
+        }
         Logs.Debug($"Will do Comfy Python call: {call}");
         ProcessStartInfo start = new()
         {
@@ -504,6 +525,10 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
                 Process p = DoPythonCall($"-s -m pip {call}");
                 NetworkBackendUtils.ReportLogsFromProcess(p, $"ComfyUI ({reason})", "");
                 await p.WaitForExitAsync(Program.GlobalProgramCancel);
+                if (p.ExitCode != 0 && Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+                {
+                    throw new SwarmReadableErrorException($"Colab package operation failed: {reason} (exit code {p.ExitCode}). Check the pip log for conflicts with the protected Colab package versions.");
+                }
                 AddLoadStatus($"Done {reason} for ComfyUI.");
             }
             async Task install(string libFolder, string pipName)

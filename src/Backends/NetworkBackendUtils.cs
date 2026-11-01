@@ -229,15 +229,16 @@ public static class NetworkBackendUtils
     {
         string path = script.Replace('\\', '/');
         string dir = Path.GetDirectoryName(path);
-        if (File.Exists($"{dir}/venv/Scripts/python.exe"))
+        bool isColab = Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true";
+        if (!isColab && File.Exists($"{dir}/venv/Scripts/python.exe"))
         {
             return Path.GetFullPath($"{dir}/venv/Lib/site-packages/");
         }
-        if (File.Exists($"{dir}/../python_embeded/python.exe"))
+        if (!isColab && File.Exists($"{dir}/../python_embeded/python.exe"))
         {
             return Path.GetFullPath($"{dir}/../python_embeded/Lib/site-packages/");
         }
-        if (File.Exists($"{dir}/venv/bin/python3"))
+        if (!isColab && File.Exists($"{dir}/venv/bin/python3"))
         {
             //return Path.GetFullPath($"{dir}/venv/lib/");
             // sub-folder named like "python3.10"
@@ -291,6 +292,16 @@ public static class NetworkBackendUtils
         start.WorkingDirectory = dir;
         preArgs = "-s " + path.AfterLast("/");
         forcePrior = "";
+        if (Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+        {
+            string colabPython = Environment.GetEnvironmentVariable("SWARM_COLAB_PYTHON");
+            if (string.IsNullOrWhiteSpace(colabPython) || !File.Exists(colabPython))
+            {
+                throw new InvalidOperationException("Colab notebook Python was not found. Run the Colab preparation cell before starting SwarmUI.");
+            }
+            start.FileName = colabPython;
+            return;
+        }
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             if (File.Exists($"{dir}/venv/Scripts/python.exe"))
