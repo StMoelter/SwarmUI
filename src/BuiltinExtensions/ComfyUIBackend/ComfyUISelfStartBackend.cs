@@ -368,6 +368,11 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
         AddLoadStatus("Starting init...");
         EnsureComfyFile();
         string addedArgs = "";
+        string colabOutput = ColabPathsHelper.GetComfyOutputDirectory();
+        if (colabOutput is not null)
+        {
+            addedArgs += $" --output-directory \"{colabOutput}\"";
+        }
         bool doFixFrontend = false;
         bool doLatestFrontend = false;
         if (!Settings.DisableInternalArgs)
@@ -408,6 +413,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
             AddLoadStatus($"Will add args: {addedArgs}");
         }
         Settings.StartScript = Settings.StartScript.Trim(' ', '"', '\'', '\n', '\r', '\t');
+        Settings.StartScript = ColabPathsHelper.GetComfyStartScript(Settings.StartScript);
         if (string.IsNullOrWhiteSpace(Settings.StartScript))
         {
             AddLoadStatus($"Start script is empty, cannot load.");
@@ -426,7 +432,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
             {
                 UserImageHistoryHelper.SharedSpecialFolders[$"inputs/_comfy{BackendData.ID}/"] = inputFolder;
             }
-            string outputFolder = $"{Directory.GetParent(Settings.StartScript).FullName}/output";
+            string outputFolder = colabOutput ?? $"{Directory.GetParent(Settings.StartScript).FullName}/output";
             if (Directory.Exists(outputFolder) && !UserImageHistoryHelper.SharedSpecialFolders.Values.Contains(outputFolder))
             {
                 UserImageHistoryHelper.SharedSpecialFolders[$"_comfy{BackendData.ID}/"] = outputFolder;

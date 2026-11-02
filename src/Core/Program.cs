@@ -143,6 +143,7 @@ public class Program
             DataDir = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, GetCommandLineFlag("data_dir", "Data"));
             SettingsFilePath = GetCommandLineFlag("settings_file", $"{DataDir}/Settings.fds");
             LoadSettingsFile();
+            ColabPathsHelper.ApplyStoragePaths(ServerSettings);
             RebuildDataDir();
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TMPDIR")))
             {
