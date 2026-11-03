@@ -159,10 +159,10 @@ class ColabStorageTests(unittest.TestCase):
         self.assertTrue(hasattr(self.module, "prepare_backend"), "Local backend preparation is missing")
         storage = self.prepare()
         (storage["data"] / "Settings.fds").write_text("IsInstalled: true\n")
-        with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+        with patch.object(self.module, "run_logged") as run:
             self.module.prepare_backend(self.app)
         self.assertEqual(run.call_args.args[0], ["bash", "launchtools/comfy-install-linux.sh", "nv"])
-        self.assertTrue(run.call_args.kwargs["check"])
+        self.assertEqual(run.call_args.kwargs["cwd"], self.app)
 
     def test_existing_backend_restores_dependencies_and_propagates_failure(self):
         self.assertTrue(hasattr(self.module, "prepare_backend"), "Local backend preparation is missing")
@@ -171,11 +171,11 @@ class ColabStorageTests(unittest.TestCase):
         (backend / "main.py").write_text("")
         requirements = backend / "requirements.txt"
         requirements.write_text("")
-        with patch.object(subprocess, "run", side_effect=subprocess.CalledProcessError(1, "pip")) as run:
+        with patch.object(self.module, "run_logged", side_effect=subprocess.CalledProcessError(1, "pip")) as run:
             with self.assertRaises(subprocess.CalledProcessError):
                 self.module.prepare_backend(self.app)
         self.assertEqual(run.call_args.args[0], [sys.executable, "-s", "-m", "pip", "install", "-r", str(requirements)])
-        self.assertTrue(run.call_args.kwargs["check"])
+        self.assertEqual(run.call_args.kwargs["cwd"], self.app)
 
 
 if __name__ == "__main__":

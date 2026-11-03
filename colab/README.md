@@ -10,6 +10,8 @@ Use a fresh GPU runtime and run the notebook's three cells in order:
 2. Prepare local tools and clone the selected repository and branch. Repeating this cell reuses the local checkout.
 3. Update the local program, protect Colab's preinstalled packages, prepare Drive storage, provision local ComfyUI, and launch SwarmUI. The normal launcher decides whether a rebuild is needed.
 
+Backend installation and server output are streamed live into the notebook, including pip dependency conflicts, build messages and the Cloudflare access URL. After the Drive paths, expect an installation/dependency-check message, then `Local ComfyUI preparation finished.` and `Starting SwarmUI`. The start cell keeps running while SwarmUI serves the interface; that alone does not mean installation is still in progress. Stopping the cell terminates the process group started by the notebook.
+
 Persistent storage is organized as follows:
 
 ```text

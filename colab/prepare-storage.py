@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,49 @@ MODEL_FOLDERS = (
     "text_encoders", "clip", "clip_vision", "diffusion_models", "unet", "upscale_models",
 )
 WORKFLOW_PATH = Path("src/BuiltinExtensions/ComfyUIBackend/CustomWorkflows")
+
+
+def run_logged(command, cwd=None):
+    """Forward child stdout/stderr live through Python so notebook users can see them."""
+    environment = dict(os.environ, PYTHONUNBUFFERED="1")
+    process = subprocess.Popen(command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
+                               start_new_session=os.name == "posix")
+    try:
+        for line in process.stdout:
+            print(line, end="", flush=True)
+        exit_code = process.wait()
+    except BaseException:
+        # Stopping a notebook cell must also stop its installer/server and child processes.
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait()
+        if os.name == "posix":
+            # The launcher may have exited before a descendant that ignored SIGTERM.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        raise
+    finally:
+        process.stdout.close()
+    if exit_code != 0:
+        raise subprocess.CalledProcessError(exit_code, command)
 
 
 def prepare_storage(app_dir, drive_root, mountpoint):
@@ -78,7 +122,10 @@ def prepare_backend(app_dir):
     app_dir = Path(app_dir).resolve()
     backend = app_dir / "dlbackend/ComfyUI"
     if not (backend / "main.py").is_file():
-        subprocess.run(["bash", "launchtools/comfy-install-linux.sh", "nv"], cwd=app_dir, check=True)
+        print("Installing the local ComfyUI backend (keeping Colab's PyTorch/CUDA)...", flush=True)
+        run_logged(["bash", "launchtools/comfy-install-linux.sh", "nv"], cwd=app_dir)
     else:
-        subprocess.run([sys.executable, "-s", "-m", "pip", "install", "-r", str(backend / "requirements.txt")],
-                       cwd=app_dir, check=True)
+        print("Checking local ComfyUI dependencies (reusing installed packages)...", flush=True)
+        run_logged([sys.executable, "-s", "-m", "pip", "install", "-r", str(backend / "requirements.txt")],
+                   cwd=app_dir)
+    print("Local ComfyUI preparation finished.", flush=True)
