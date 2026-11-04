@@ -16,6 +16,7 @@ if [ "${SWARM_COLAB_MODE}" == "true" ]; then
         exit 1
     fi
     export SWARM_NO_VENV=true
+    export PIP_ONLY_BINARY=:all:
     "${SWARM_COLAB_PYTHON}" -s -c "import torch, torchvision; assert torch.cuda.is_available(), 'Select a GPU runtime in Colab before installing SwarmUI.'" || {
         >&2 echo "ERROR: Colab's existing PyTorch/CUDA environment is not usable. Start a fresh GPU runtime."
         exit 1

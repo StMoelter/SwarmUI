@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -44,7 +45,7 @@ class ColabEnvironmentTests(unittest.TestCase):
     def test_capture_protects_base_packages_but_not_unrelated_packages(self):
         packages = self.distributions({
             "torch": "2.8.0+cu126", "torchvision": "0.23.0+cu126",
-            "NumPy": "2.0.2", "numba": "0.60.0", "llvmlite": "0.43.0",
+            "NumPy": "2.4.6", "numba": "0.60.0", "llvmlite": "0.43.0",
             "Pillow": "11.3.0", "opencv_python": "4.12.0.88",
             "opencv-contrib-python": "4.12.0.88",
             "opencv-python-headless": "4.12.0.88", "torchaudio": "2.8.0",
@@ -56,7 +57,7 @@ class ColabEnvironmentTests(unittest.TestCase):
             self.module.protect_packages(constraints)
         self.assertEqual(set(constraints.read_text().splitlines()), {
             "torch==2.8.0+cu126", "torchvision==0.23.0+cu126",
-            "numpy==2.0.2", "numba==0.60.0", "llvmlite==0.43.0",
+            "numpy==2.4.6", "numba==0.60.0", "llvmlite==0.43.0",
             "pillow==11.3.0", "opencv-python==4.12.0.88",
             "opencv-contrib-python==4.12.0.88", "opencv-python-headless==4.12.0.88",
             "torchaudio==2.8.0", "nvidia-cublas-cu12==12.6.4.1", "triton==3.4.0",
@@ -64,12 +65,12 @@ class ColabEnvironmentTests(unittest.TestCase):
 
     def test_repeated_preparation_keeps_original_baseline(self):
         constraints = self.directory / "constraints.txt"
-        packages = self.distributions({"numpy": "2.0.2"})
+        packages = self.distributions({"numpy": "2.4.6"})
         with patch.object(self.module.importlib.metadata, "distributions", return_value=packages):
             self.module.protect_packages(constraints)
             self.module.protect_packages(constraints)
         baseline = constraints.read_bytes()
-        for installed in ({"numpy": "2.3.5"}, {}):
+        for installed in ({"numpy": "2.5.0"}, {}):
             with self.subTest(installed=installed):
                 changed = self.distributions(installed)
                 with patch.object(self.module.importlib.metadata, "distributions", return_value=changed):
@@ -77,56 +78,93 @@ class ColabEnvironmentTests(unittest.TestCase):
                         self.module.protect_packages(constraints)
                 self.assertEqual(constraints.read_bytes(), baseline)
 
+    def test_duplicate_metadata_does_not_pin_shadowed_numpy(self):
+        current = self.distributions({"numpy": "2.4.6"})
+        shadowed = self.distributions({"numpy": "1.26.4"})
+        constraints = self.directory / "constraints.txt"
+        with patch.object(self.module.importlib.metadata, "distributions", return_value=current + shadowed):
+            self.module.protect_packages(constraints)
+        self.assertEqual(constraints.read_text(), "numpy==2.4.6\n")
+
+    def test_numpy_126_is_rejected_on_python313_before_installing(self):
+        packages = self.distributions({"numpy": "1.26.4"})
+        constraints = self.directory / "constraints.txt"
+        with patch.object(self.module.importlib.metadata, "distributions", return_value=packages), \
+                patch.object(self.module.sys, "version_info", (3, 13, 16)):
+            with self.assertRaisesRegex(RuntimeError, "fresh"):
+                self.module.protect_packages(constraints)
+        self.assertFalse(constraints.exists())
+
+    def test_numpy_126_remains_supported_on_python312(self):
+        packages = self.distributions({"numpy": "1.26.4"})
+        constraints = self.directory / "constraints.txt"
+        with patch.object(self.module.importlib.metadata, "distributions", return_value=packages), \
+                patch.object(self.module.sys, "version_info", (3, 12, 10)):
+            self.module.protect_packages(constraints)
+        self.assertEqual(constraints.read_text(), "numpy==1.26.4\n")
+
+    def test_inventory_uses_fresh_python_and_actual_numpy_not_stale_metadata(self):
+        """Reproduce stale metadata with a real subprocess and a tiny importable package."""
+        self.distributions({"numpy": "1.26.4"})
+        numpy = self.directory / "numpy"
+        numpy.mkdir()
+        (numpy / "__init__.py").write_text("__version__ = '2.4.6'\n")
+        environment = dict(os.environ, PYTHONPATH=str(self.directory))
+        result = subprocess.run([sys.executable, "-s", str(ROOT / "colab/prepare-colab.py"), "--inventory"],
+                                env=environment, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["numpy"], "2.4.6")
+
     def test_preparation_exports_protection_and_preserves_diagnostics(self):
         constraints = self.directory / "constraints.txt"
-        packages = self.distributions({"torch": "2.8.0", "numpy": "2.0.2"})
+        packages = self.distributions({"torch": "2.8.0", "numpy": "2.4.6"})
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(self.module, "Path", return_value=constraints), \
-                    patch.object(self.module.importlib.metadata, "distributions", return_value=packages), \
+            with patch.object(self.module.importlib.metadata, "distributions", return_value=packages), \
                     patch.object(self.module.subprocess, "run", side_effect=[
                         subprocess.CompletedProcess([], 0),
                         subprocess.CompletedProcess([], 0),
+                        subprocess.CompletedProcess([], 0, stdout='{"torch":"2.8.0","numpy":"2.4.6"}'),
                         subprocess.CompletedProcess([], 1, stdout="Existing unrelated conflict\n"),
                         subprocess.CompletedProcess([], 0),
                         subprocess.CompletedProcess([], 0),
+                        subprocess.CompletedProcess([], 0, stdout='{"torch":"2.8.0","numpy":"2.4.6"}'),
                     ]):
-                self.module.prepare_environment()
-                self.module.prepare_environment()
+                self.module.prepare_environment(constraints)
+                self.module.prepare_environment(constraints)
             self.assertEqual(os.environ["SWARM_COLAB_MODE"], "true")
             self.assertEqual(os.environ["SWARM_COLAB_PYTHON"], sys.executable)
             self.assertEqual(os.environ["PIP_CONSTRAINT"], str(constraints))
             self.assertEqual(os.environ["SWARM_NO_VENV"], "true")
+            self.assertEqual(os.environ["PIP_ONLY_BINARY"], ":all:")
             self.assertEqual(constraints.with_name("pip-check-before.txt").read_text(),
                              "Existing unrelated conflict\n")
 
     def test_gpu_failure_does_not_capture_an_unusable_baseline(self):
         constraints = self.directory / "constraints.txt"
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(self.module, "Path", return_value=constraints), \
-                    patch.object(self.module.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "GPU check")):
+            with patch.object(self.module.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "GPU check")):
                 with self.assertRaises(subprocess.CalledProcessError):
-                    self.module.prepare_environment()
+                    self.module.prepare_environment(constraints)
             self.assertNotIn("SWARM_COLAB_MODE", os.environ)
         self.assertFalse(constraints.exists())
 
     def test_missing_notebook_pip_fails_before_baseline_is_captured(self):
         constraints = self.directory / "constraints.txt"
         with patch.dict(os.environ, {}, clear=True):
-            with patch.object(self.module, "Path", return_value=constraints), \
-                    patch.object(self.module.subprocess, "run", side_effect=[
+            with patch.object(self.module.subprocess, "run", side_effect=[
                         subprocess.CompletedProcess([], 0),
                         subprocess.CalledProcessError(1, "notebook pip check"),
                     ]):
                 with self.assertRaises(subprocess.CalledProcessError):
-                    self.module.prepare_environment()
+                    self.module.prepare_environment(constraints)
             self.assertNotIn("SWARM_COLAB_MODE", os.environ)
         self.assertFalse(constraints.exists())
 
     def test_real_pip_rejects_dependency_that_would_replace_protected_numpy(self):
         """Resolve local wheels only; never install packages or access the network."""
         for name, version, requires in (
-            ("numpy", "2.0.2", ""), ("numpy", "2.3.5", ""),
-            ("swarm_colab_probe", "1.0.0", "Requires-Dist: numpy>=2.2\n"),
+            ("numpy", "2.4.6", ""), ("numpy", "2.5.0", ""),
+            ("swarm_colab_probe", "1.0.0", "Requires-Dist: numpy>=2.5\n"),
         ):
             dist_info = f"{name}-{version}.dist-info"
             with zipfile.ZipFile(self.directory / f"{name}-{version}-py3-none-any.whl", "w") as wheel:
@@ -135,7 +173,7 @@ class ColabEnvironmentTests(unittest.TestCase):
                 wheel.writestr(f"{dist_info}/WHEEL", "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n")
                 wheel.writestr(f"{dist_info}/RECORD", "")
         constraints = self.directory / "constraints.txt"
-        packages = self.distributions({"numpy": "2.0.2"})
+        packages = self.distributions({"numpy": "2.4.6"})
         with patch.object(self.module.importlib.metadata, "distributions", return_value=packages):
             self.module.protect_packages(constraints)
         command = [sys.executable, "-m", "pip", "install", "--dry-run", "--ignore-installed",
@@ -150,7 +188,7 @@ class ColabEnvironmentTests(unittest.TestCase):
         constrained = subprocess.run(command, env=env, text=True, capture_output=True)
         self.assertNotEqual(constrained.returncode, 0)
         self.assertIn("ResolutionImpossible", constrained.stderr)
-        self.assertEqual(constraints.read_text(), "numpy==2.0.2\n")
+        self.assertEqual(constraints.read_text(), "numpy==2.4.6\n")
         self.assertFalse((self.directory / "unused-target").exists())
 
 
