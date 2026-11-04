@@ -143,6 +143,27 @@ public static class WebUtil
         {
             return null;
         }
+        if (Environment.GetEnvironmentVariable("SWARM_COLAB_MODE") == "true")
+        {
+            string notebookPython = Environment.GetEnvironmentVariable("SWARM_COLAB_PYTHON");
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(notebookPython) && File.Exists(notebookPython))
+                {
+                    int exitCode = -1;
+                    string pipVersion = await Utilities.QuickRunProcess(notebookPython, ["-s", "-m", "pip", "--version"], setExitCode: code => exitCode = code);
+                    if (exitCode == 0 && pipVersion.StartsWith("pip "))
+                    {
+                        return null;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logs.Debug($"Failed to check Colab notebook pip: {ex}");
+            }
+            return "The Colab notebook Python could not run pip. Run the notebook preparation again before starting SwarmUI.";
+        }
         static async Task<string> tryPyVer(string name)
         {
             try

@@ -10,6 +10,8 @@ Use a fresh GPU runtime and run the notebook's three cells in order:
 2. Prepare local tools and clone the selected repository and branch. Repeating this cell reuses the local checkout.
 3. Update the local program, protect Colab's preinstalled packages, prepare Drive storage, provision local ComfyUI, and launch SwarmUI. The normal launcher decides whether a rebuild is needed.
 
+The first Colab launch automatically completes SwarmUI's initial configuration and registers the prepared local backend before serving the UI. Open the Cloudflare URL to reach the generation interface directly. Existing installed configurations and backend records are retained. No model download is triggered automatically; select an existing Drive model or use SwarmUI's model downloader if the collection is empty. The Colab backend uses the frontend already installed with ComfyUI rather than downloading a second validated frontend version.
+
 Backend installation and server output are streamed live into the notebook, including pip dependency conflicts, build messages and the Cloudflare access URL. After the Drive paths, expect an installation/dependency-check message, then `Local ComfyUI preparation finished.` and `Starting SwarmUI`. The start cell keeps running while SwarmUI serves the interface; that alone does not mean installation is still in progress. Stopping the cell terminates the process group started by the notebook.
 
 Persistent storage is organized as follows:
@@ -24,6 +26,7 @@ MyDrive/SwarmUI/
     ComfyUI/          # Images written directly by ComfyUI nodes
   Data/               # Settings, users, presets and metadata databases
   Workflows/          # Saved custom ComfyUI workflows
+  Cache/pip/          # Reusable package downloads for later runtimes
 ```
 
 Existing files remain in place; preparation only creates missing directories. If the old Drive installation already contains `src/BuiltinExtensions/ComfyUIBackend/CustomWorkflows`, that directory is reused instead of creating `Workflows`. Preparation prints the actual paths. The old Drive program, backend and Python environment are not updated or deleted.
@@ -33,6 +36,8 @@ Local `Models` and `Output` links point to Drive; the local custom-workflow dire
 Existing per-model-type directory settings are preserved when they resolve inside the selected Drive `Models` directory. An absolute directory outside that root or a relative `../` escape stops startup with the setting name and offending path, rather than sending downloads to temporary storage. Correct those values to subfolder names such as `Stable-Diffusion` or `Lora` before starting again.
 
 Temporary files stay on the Colab VM via `TMPDIR`. Models are read directly from Drive, without copying the full collection at startup. Model loading can therefore take longer than loading from local disk. Saved images use SwarmUI's existing user/date organization under `Output`; directly saved backend images use `Output/ComfyUI`. These files persist when the Colab runtime is deleted. No separate Drive upload or synchronization service is needed.
+
+New Colab checkouts use shallow Git clones, and repeat setup reuses installed .NET and cloudflared. `PIP_CACHE_DIR` points to Drive's `Cache/pip`, so later runtimes can reuse package downloads. A fresh VM still has to install dependencies absent from Colab and build the server locally; this is not an instant startup guarantee. Tool preparation and ComfyUI preparation report their elapsed seconds; .NET prints its build/restore duration. Keep those lines when reporting slow startup so the costly stage can be identified.
 
 Preparation stops if Drive is not mounted or writable, a storage destination is a file, or a local path already contains a real directory or a different symlink. It does not replace or delete that content and does not silently switch to temporary local storage. Start with a fresh runtime when switching from the old notebook's temporary installation.
 

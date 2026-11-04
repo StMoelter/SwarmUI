@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 
 MODEL_FOLDERS = (
@@ -76,6 +77,7 @@ def prepare_storage(app_dir, drive_root, mountpoint):
         "output": drive_root / "Output",
         "data": drive_root / "Data",
         "workflows": workflows,
+        "pip_cache": drive_root / "Cache/pip",
     }
     links = {app_dir / "Models": storage["models"],
              app_dir / "Output": storage["output"],
@@ -111,6 +113,7 @@ def prepare_storage(app_dir, drive_root, mountpoint):
     temporary.mkdir(parents=True, exist_ok=True)
     os.environ["TMPDIR"] = str(temporary)
     os.environ["SWARM_COLAB_DRIVE_ROOT"] = str(drive_root)
+    os.environ["PIP_CACHE_DIR"] = str(storage["pip_cache"])
     for name, path in storage.items():
         print(f"Drive {name}: {path}", flush=True)
     print(f"Local program: {app_dir}\nLocal temporary files: {temporary}", flush=True)
@@ -121,6 +124,7 @@ def prepare_backend(app_dir):
     """Provision local ComfyUI even when Drive settings say SwarmUI is already installed."""
     app_dir = Path(app_dir).resolve()
     backend = app_dir / "dlbackend/ComfyUI"
+    started = time.monotonic()
     if not (backend / "main.py").is_file():
         print("Installing the local ComfyUI backend (keeping Colab's PyTorch/CUDA)...", flush=True)
         run_logged(["bash", "launchtools/comfy-install-linux.sh", "nv"], cwd=app_dir)
@@ -128,4 +132,4 @@ def prepare_backend(app_dir):
         print("Checking local ComfyUI dependencies (reusing installed packages)...", flush=True)
         run_logged([sys.executable, "-s", "-m", "pip", "install", "-r", str(backend / "requirements.txt")],
                    cwd=app_dir)
-    print("Local ComfyUI preparation finished.", flush=True)
+    print(f"Local ComfyUI preparation finished in {time.monotonic() - started:.1f} seconds.", flush=True)

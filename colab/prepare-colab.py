@@ -48,6 +48,8 @@ def prepare_environment():
         "assert torch.cuda.is_available(), "
         "'No usable CUDA GPU. Select a GPU runtime in Colab before starting SwarmUI.'",
     ], check=True)
+    print("Checking pip with the notebook Python...", flush=True)
+    subprocess.run([sys.executable, "-s", "-m", "pip", "--version"], check=True)
     constraints_path = Path("/content/swarm-colab/constraints.txt")
     protect_packages(constraints_path)
     baseline_check = constraints_path.with_name("pip-check-before.txt")

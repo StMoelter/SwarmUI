@@ -317,6 +317,10 @@ public class Program
         {
             SaveFilePath = GetCommandLineFlag("backends_file", $"{DataDir}/Backends.fds")
         };
+        if (ColabPathsHelper.CompleteSetup(ServerSettings, Backends.SaveFilePath, "dlbackend/ComfyUI/main.py"))
+        {
+            SaveSettingsFile();
+        }
         Sessions = new();
         Web = new();
         timer.Check("Prep Options");

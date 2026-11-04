@@ -5,6 +5,9 @@ using NUnit.Framework;
 using SwarmUI.Backends;
 using SwarmUI.Builtin_ComfyUIBackend;
 using SwarmUI.Utils;
+using SwarmUI.Core;
+using System.Threading.Tasks;
+using System.Runtime.Versioning;
 
 namespace SwarmUITests;
 
@@ -12,6 +15,34 @@ namespace SwarmUITests;
 [TestFixture, NonParallelizable]
 public class ColabPythonTests : SwarmUITest
 {
+    /// <summary>The installer checks pip with the notebook interpreter, without requiring a separate venv.</summary>
+    [Test, Platform(Exclude = "Win"), UnsupportedOSPlatform("windows")]
+    public static async Task TestColabInstallerPipCheck()
+    {
+        string python = Path.GetTempFileName();
+        string oldMode = Environment.GetEnvironmentVariable("SWARM_COLAB_MODE");
+        string oldPython = Environment.GetEnvironmentVariable("SWARM_COLAB_PYTHON");
+        bool wasInstalled = Program.ServerSettings.IsInstalled;
+        try
+        {
+            File.WriteAllText(python, "#!/bin/sh\nif [ \"$*\" = \"-s -m pip --version\" ]; then echo 'pip 25.0'; exit 0; fi\nexit 9\n");
+            File.SetUnixFileMode(python, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Program.ServerSettings.IsInstalled = false;
+            Environment.SetEnvironmentVariable("SWARM_COLAB_MODE", "true");
+            Environment.SetEnvironmentVariable("SWARM_COLAB_PYTHON", python);
+            Assert.That(await WebUtil.NeedLinuxPythonWarn(), Is.Null);
+            File.WriteAllText(python, "#!/bin/sh\necho 'No module named pip'\nexit 1\n");
+            Assert.That(await WebUtil.NeedLinuxPythonWarn(), Does.Contain("notebook"));
+        }
+        finally
+        {
+            Program.ServerSettings.IsInstalled = wasInstalled;
+            Environment.SetEnvironmentVariable("SWARM_COLAB_MODE", oldMode);
+            Environment.SetEnvironmentVariable("SWARM_COLAB_PYTHON", oldPython);
+            File.Delete(python);
+        }
+    }
+
     /// <summary>Prepares the test environment.</summary>
     [OneTimeSetUp]
     public static void PreInit()
@@ -63,10 +94,10 @@ public class ColabPythonTests : SwarmUITest
         {
             Environment.SetEnvironmentVariable("SWARM_COLAB_MODE", "true");
             Environment.SetEnvironmentVariable("SWARM_COLAB_PYTHON", null);
-            Assert.Throws<InvalidOperationException>(() => NetworkBackendUtils.ConfigurePythonExeFor(
-                Path.Combine(Path.GetTempPath(), "main.py"), "test", new ProcessStartInfo(), out _, out _));
-            Assert.Throws<InvalidOperationException>(() => PythonLaunchHelper.LaunchGeneric(
-                Path.Combine(Path.GetTempPath(), "main.py"), false, []));
+            Assert.Throws<InvalidOperationException>(new Action(() => NetworkBackendUtils.ConfigurePythonExeFor(
+                Path.Combine(Path.GetTempPath(), "main.py"), "test", new ProcessStartInfo(), out _, out _)));
+            Assert.Throws<InvalidOperationException>(new Action(() => PythonLaunchHelper.LaunchGeneric(
+                Path.Combine(Path.GetTempPath(), "main.py"), false, [])));
         }
         finally
         {
@@ -76,7 +107,7 @@ public class ColabPythonTests : SwarmUITest
     }
 
     /// <summary>Generic helpers must use notebook Python instead of a stale Drive venv.</summary>
-    [Test, Platform(Exclude = "Win")]
+    [Test, Platform(Exclude = "Win"), UnsupportedOSPlatform("windows")]
     public static void TestGenericUsesNotebookPython()
     {
         string root = Path.Combine(Path.GetTempPath(), $"swarm-colab-test-{Guid.NewGuid()}");
@@ -124,9 +155,9 @@ public class ColabPythonTests : SwarmUITest
             Environment.SetEnvironmentVariable("SWARM_COLAB_MODE", "true");
             Environment.SetEnvironmentVariable("PIP_CONSTRAINT", constraints);
             ComfyUISelfStartBackend backend = new();
-            Assert.Throws<SwarmReadableErrorException>(() => backend.DoPythonCall("-s -m pip install numpy"));
+            Assert.Throws<SwarmReadableErrorException>(new Action(() => backend.DoPythonCall("-s -m pip install numpy")));
             File.WriteAllText(constraints, "numpy==2.0.2\n");
-            Assert.Throws<SwarmReadableErrorException>(() => backend.DoPythonCall("-s -m pip uninstall -y numpy"));
+            Assert.Throws<SwarmReadableErrorException>(new Action(() => backend.DoPythonCall("-s -m pip uninstall -y numpy")));
         }
         finally
         {

@@ -85,7 +85,9 @@ class ColabEnvironmentTests(unittest.TestCase):
                     patch.object(self.module.importlib.metadata, "distributions", return_value=packages), \
                     patch.object(self.module.subprocess, "run", side_effect=[
                         subprocess.CompletedProcess([], 0),
+                        subprocess.CompletedProcess([], 0),
                         subprocess.CompletedProcess([], 1, stdout="Existing unrelated conflict\n"),
+                        subprocess.CompletedProcess([], 0),
                         subprocess.CompletedProcess([], 0),
                     ]):
                 self.module.prepare_environment()
@@ -102,6 +104,19 @@ class ColabEnvironmentTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with patch.object(self.module, "Path", return_value=constraints), \
                     patch.object(self.module.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "GPU check")):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.module.prepare_environment()
+            self.assertNotIn("SWARM_COLAB_MODE", os.environ)
+        self.assertFalse(constraints.exists())
+
+    def test_missing_notebook_pip_fails_before_baseline_is_captured(self):
+        constraints = self.directory / "constraints.txt"
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(self.module, "Path", return_value=constraints), \
+                    patch.object(self.module.subprocess, "run", side_effect=[
+                        subprocess.CompletedProcess([], 0),
+                        subprocess.CalledProcessError(1, "notebook pip check"),
+                    ]):
                 with self.assertRaises(subprocess.CalledProcessError):
                     self.module.prepare_environment()
             self.assertNotIn("SWARM_COLAB_MODE", os.environ)

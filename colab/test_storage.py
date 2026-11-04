@@ -55,6 +55,8 @@ class ColabStorageTests(unittest.TestCase):
         self.assertTrue((self.drive / "Output/ComfyUI").is_dir())
         self.assertEqual(storage["data"], self.drive / "Data")
         self.assertEqual(os.environ["SWARM_COLAB_DRIVE_ROOT"], str(self.drive))
+        self.assertEqual(os.environ.get("PIP_CACHE_DIR"), str(self.drive / "Cache/pip"))
+        self.assertTrue((self.drive / "Cache/pip").is_dir())
         self.assertTrue(Path(os.environ["TMPDIR"]).is_dir())
         self.assertFalse(Path(os.environ["TMPDIR"]).is_relative_to(self.mount))
 

@@ -35,7 +35,11 @@ cd dlbackend
 if [ "${SWARM_COLAB_MODE}" == "true" ] && [ -d ComfyUI/.git ]; then
     echo "Reusing the existing ComfyUI checkout."
 else
-    git clone https://github.com/comfyanonymous/ComfyUI
+    if [ "${SWARM_COLAB_MODE}" == "true" ]; then
+        git clone --depth 1 https://github.com/comfyanonymous/ComfyUI
+    else
+        git clone https://github.com/comfyanonymous/ComfyUI
+    fi
 fi
 
 cd ComfyUI
