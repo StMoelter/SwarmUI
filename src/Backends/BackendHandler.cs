@@ -367,7 +367,6 @@ public class BackendHandler
     /// <summary>Adds a new backend of the given type, and returns its data. Note that the backend will not be initialized at first.</summary>
     public BackendData AddNewOfType(BackendType type, AutoConfiguration config = null)
     {
-        BackendsEdited = true;
         BackendData data = RawInstantiate(type);
         data.AbstractBackend.AbstractBackendData = data;
         data.AbstractBackend.SettingsRaw = config ?? (Activator.CreateInstance(type.SettingsClass) as AutoConfiguration);
@@ -377,6 +376,7 @@ public class BackendHandler
             data.ID = LastBackendID++;
             AllBackends.TryAdd(data.ID, data);
         }
+        MarkEdited();
         DoInitBackend(data);
         NewBackendInitSignal.Set();
         return data;
@@ -426,11 +426,11 @@ public class BackendHandler
     /// <summary>Shutdown and delete a given backend.</summary>
     public async Task<bool> DeleteById(int id)
     {
-        BackendsEdited = true;
         if (!AllBackends.TryRemove(id, out BackendData data))
         {
             return false;
         }
+        MarkEdited();
         await ShutdownBackendCleanly(data);
         ReassignLoadedModelsList();
         return true;
@@ -460,7 +460,7 @@ public class BackendHandler
         {
             data.AbstractBackend.Title = title;
         }
-        BackendsEdited = true;
+        MarkEdited();
         data.ModCount++;
         DoInitBackend(data);
         return data;
@@ -722,6 +722,16 @@ public class BackendHandler
             {
                 model.AnyBackendsHaveLoaded = true;
             }
+        }
+    }
+
+    /// <summary>Records a configuration change, saving immediately on persistent Colab storage.</summary>
+    public void MarkEdited()
+    {
+        BackendsEdited = true;
+        if (!Program.NoPersist && ColabPathsHelper.GetDriveRoot() is not null)
+        {
+            Save();
         }
     }
 

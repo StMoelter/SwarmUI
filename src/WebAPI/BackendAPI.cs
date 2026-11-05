@@ -125,7 +125,7 @@ public class BackendAPI
         }
         backend.AbstractBackend.IsEnabled = enabled;
         backend.AbstractBackend.ShutDownReserve = true;
-        Program.Backends.BackendsEdited = true;
+        Program.Backends.MarkEdited();
         while (backend.CheckIsInUse && backend.AbstractBackend.MaxUsages > 0)
         {
             if (Program.GlobalProgramCancel.IsCancellationRequested)

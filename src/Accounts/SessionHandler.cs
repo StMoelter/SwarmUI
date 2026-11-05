@@ -231,7 +231,10 @@ public class SessionHandler
                 File.Copy(userDbFile, backupFile);
             }
         }
-        Database = new LiteDatabase(userDbFile);
+        // Drive synchronizes closed files more reliably than an open database and its journal.
+        // Shared mode closes/checkpoints each operation, including API keys and preferences.
+        Database = ColabPathsHelper.GetDriveRoot() is null ? new LiteDatabase(userDbFile)
+            : new LiteDatabase(new ConnectionString() { Filename = userDbFile, Connection = ConnectionType.Shared });
         UserDatabase = Database.GetCollection<User.DatabaseEntry>("users");
         SessionDatabase = Database.GetCollection<Session.DatabaseEntry>("sessions");
         T2IPresets = Database.GetCollection<T2IPreset>("t2i_presets");
@@ -345,13 +348,11 @@ public class SessionHandler
         long cutOffTimeUTC = DateTimeOffset.UtcNow.Subtract(MaxSessionAge).ToUnixTimeSeconds();
         lock (DBLock)
         {
-            foreach (Session.DatabaseEntry sess in SessionDatabase.FindAll())
+            if (HasShutdown)
             {
-                if (sess.LastActiveUnixTime < cutOffTimeUTC)
-                {
-                    SessionDatabase.Delete(sess.ID);
-                }
+                return;
             }
+            SessionDatabase.DeleteMany(sess => sess.LastActiveUnixTime < cutOffTimeUTC);
         }
     }
 

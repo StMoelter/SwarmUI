@@ -83,6 +83,31 @@ class NotebookProcessTests(unittest.TestCase):
             os.kill(child_pid, 0)
 
     @unittest.skipUnless(os.name == "posix", "Colab process groups require POSIX")
+    def test_stopping_notebook_allows_descendant_to_save(self):
+        class InterruptedNotebook(io.StringIO):
+            def write(self, text):
+                if "ready" in text:
+                    raise KeyboardInterrupt()
+                return super().write(text)
+
+        with tempfile.TemporaryDirectory() as directory:
+            saved = Path(directory) / "saved"
+            child = ("import pathlib,signal,sys,time\n"
+                     "def stop(*args):\n"
+                     "    time.sleep(0.3)\n"
+                     "    pathlib.Path(sys.argv[1]).write_text('saved')\n"
+                     "    sys.exit(0)\n"
+                     "signal.signal(signal.SIGTERM,stop)\n"
+                     "print('ready',flush=True)\n"
+                     "time.sleep(60)")
+            parent = ("import subprocess,sys,time; "
+                      "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); time.sleep(60)")
+            with contextlib.redirect_stdout(InterruptedNotebook()):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.module.run_logged([sys.executable, "-c", parent, child, str(saved)])
+            self.assertTrue(saved.exists(), "Launcher exited before its server could finish saving")
+
+    @unittest.skipUnless(os.name == "posix", "Colab process groups require POSIX")
     def test_stopping_notebook_kills_descendant_that_ignores_sigterm(self):
         descendant_pid = None
 

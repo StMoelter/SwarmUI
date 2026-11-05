@@ -16,7 +16,7 @@ MODEL_FOLDERS = (
 WORKFLOW_PATH = Path("src/BuiltinExtensions/ComfyUIBackend/CustomWorkflows")
 
 
-def run_logged(command, cwd=None):
+def run_logged(command, cwd=None, shutdown_timeout=5):
     """Forward child stdout/stderr live through Python so notebook users can see them."""
     environment = dict(os.environ, PYTHONUNBUFFERED="1")
     process = subprocess.Popen(command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
@@ -36,7 +36,21 @@ def run_logged(command, cwd=None):
         else:
             process.terminate()
         try:
-            process.wait(timeout=5)
+            deadline = time.monotonic() + shutdown_timeout
+            if os.name == "posix":
+                # A shell can exit before its server finishes saving. Give the entire
+                # group time to shut down before killing any remaining descendants.
+                while time.monotonic() < deadline:
+                    process.poll()
+                    try:
+                        os.killpg(process.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    except PermissionError:
+                        # Some hosts deny existence probes; retain the grace period.
+                        pass
+                    time.sleep(0.05)
+            process.wait(timeout=max(0.01, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             if os.name == "posix":
                 try:
